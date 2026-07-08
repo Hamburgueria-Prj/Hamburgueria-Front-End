@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, Save, Trash2 } from 'lucide-react';
 import { categories, categoryLabels, type Category } from '../data/menu';
 import {
+  type DashboardResponse,
   type FormaPagamento,
   type PagamentoResponse,
   type PedidoResponse,
@@ -15,13 +16,14 @@ import { atualizarProduto, inativarProduto, listarProdutosApi, salvarProdutoSemD
 import { atualizarUsuario, cadastrarUsuario, inativarUsuario, listarUsuarios } from '../services/userService';
 import { listarPagamentos } from '../services/paymentService';
 import { atualizarStatusPedido, listarPedidos } from '../services/orderService';
+import { buscarDashboardDoDia } from '../services/dashboardService';
 
 type ManagementPanelProps = {
   lastOrder: PedidoResponse | null;
   onProductsChanged: () => Promise<void>;
 };
 
-type Tab = 'produtos' | 'usuarios' | 'pedidos' | 'pagamentos';
+type Tab = 'produtos' | 'usuarios' | 'pedidos' | 'pagamentos' | 'dashboard';
 
 type ProductForm = {
   id?: number;
@@ -75,6 +77,8 @@ const paymentLabels: Record<FormaPagamento, string> = {
   CARTAO_CREDITO: 'Cartão crédito',
   CARTAO_DEBITO: 'Cartão débito'
 };
+
+const dashboardStatusOrder: StatusPedido[] = ['RECEBIDO', 'EM_PREPARO', 'PRONTO', 'ENTREGUE', 'CANCELADO'];
 
 const statusActions: StatusPedido[] = ['EM_PREPARO', 'PRONTO', 'ENTREGUE', 'CANCELADO'];
 
@@ -136,6 +140,7 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
   const [users, setUsers] = useState<UsuarioResponse[]>([]);
   const [payments, setPayments] = useState<PagamentoResponse[]>([]);
   const [orders, setOrders] = useState<PedidoResponse[]>([]);
+  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [productForm, setProductForm] = useState<ProductForm>(initialProductForm);
   const [userForm, setUserForm] = useState<UserForm>(initialUserForm);
   const [updatedOrder, setUpdatedOrder] = useState<PedidoResponse | null>(null);
@@ -158,27 +163,33 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
 
   const productTotal = useMemo(() => products.length, [products]);
   const userTotal = useMemo(() => users.length, [users]);
-  const orderTotal = useMemo(() => orders.length, [orders]);
-  const paymentTotal = useMemo(() => payments.reduce((sum, payment) => sum + toNumber(payment.valorPago), 0), [payments]);
+  const orderTotal = useMemo(() => dashboard?.quantidadePedidosDia ?? orders.length, [dashboard, orders]);
+  const paymentTotal = useMemo(() => toNumber(dashboard?.totalVendidoDia ?? payments.reduce((sum, payment) => sum + toNumber(payment.valorPago), 0)), [dashboard, payments]);
+  const totalPedidosPorStatus = useMemo(() => {
+    if (!dashboard?.pedidosPorStatus) return 0;
+    return Object.values(dashboard.pedidosPorStatus).reduce((sum, value) => sum + toNumber(value), 0);
+  }, [dashboard]);
 
   async function loadAll() {
     setLoading(true);
     setMessage(null);
 
     try {
-      const [productList, userList, paymentList, orderList] = await Promise.allSettled([
+      const [productList, userList, paymentList, orderList, dashboardData] = await Promise.allSettled([
         listarProdutosApi(),
         listarUsuarios(),
         listarPagamentos(),
-        listarPedidos()
+        listarPedidos(),
+        buscarDashboardDoDia()
       ]);
 
       if (productList.status === 'fulfilled') setProducts(productList.value);
       if (userList.status === 'fulfilled') setUsers(userList.value);
       if (paymentList.status === 'fulfilled') setPayments(paymentList.value);
       if (orderList.status === 'fulfilled') setOrders(orderList.value);
+      if (dashboardData.status === 'fulfilled') setDashboard(dashboardData.value);
 
-      const failures = [productList, userList, paymentList, orderList].filter((result) => result.status === 'rejected');
+      const failures = [productList, userList, paymentList, orderList, dashboardData].filter((result) => result.status === 'rejected');
       setMessage(
         failures.length > 0
           ? { type: 'info', text: 'Alguns dados não carregaram. Confira se o backend está ligado e tente atualizar.' }
@@ -198,9 +209,25 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
   }
 
   async function reloadOrdersAndPayments() {
-    const [orderList, paymentList] = await Promise.all([listarPedidos(), listarPagamentos()]);
+    const [orderList, paymentList, dashboardData] = await Promise.all([listarPedidos(), listarPagamentos(), buscarDashboardDoDia()]);
     setOrders(orderList);
     setPayments(paymentList);
+    setDashboard(dashboardData);
+  }
+
+  async function reloadDashboard() {
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const dashboardData = await buscarDashboardDoDia();
+      setDashboard(dashboardData);
+      setMessage({ type: 'success', text: 'Dashboard do dia atualizado com sucesso.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: normalizeMessage(error, 'Falha ao carregar o dashboard do dia.') });
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleProductImageChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -393,7 +420,8 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
           ['produtos', 'Produtos'],
           ['usuarios', 'Usuários'],
           ['pedidos', 'Pedidos'],
-          ['pagamentos', 'Pagamentos']
+          ['pagamentos', 'Pagamentos'],
+          ['dashboard', 'Dashboard']
         ] as Array<[Tab, string]>).map(([tab, label]) => (
           <button key={tab} className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>
             {label}
@@ -628,7 +656,7 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
         <div className="table-card">
           <div className="table-header">
             <h3>Pagamentos registrados</h3>
-            <button className="secondary-button compact" onClick={() => listarPagamentos().then(setPayments)} disabled={loading}>Atualizar</button>
+            <button className="secondary-button compact" onClick={() => void reloadOrdersAndPayments()} disabled={loading}>Atualizar</button>
           </div>
           <div className="responsive-table">
             <table>
@@ -656,6 +684,91 @@ export function ManagementPanel({ lastOrder, onProductsChanged }: ManagementPane
                 {payments.length === 0 && <tr><td colSpan={6}>Nenhum pagamento encontrado.</td></tr>}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+
+      {activeTab === 'dashboard' && (
+        <div className="dashboard-admin-section">
+          <div className="table-header">
+            <div>
+              <h3>Dashboard do dia</h3>
+              <p>Resumo operacional da hamburgueria: vendas do dia, quantidade de pedidos, itens mais vendidos e status dos pedidos.</p>
+            </div>
+            <button className="secondary-button compact" onClick={() => void reloadDashboard()} disabled={loading}>Atualizar</button>
+          </div>
+
+          <div className="dashboard-admin-kpis">
+            <article>
+              <span>Total vendido hoje</span>
+              <strong>{formatCurrency(toNumber(dashboard?.totalVendidoDia))}</strong>
+            </article>
+            <article>
+              <span>Pedidos do dia</span>
+              <strong>{dashboard?.quantidadePedidosDia ?? 0}</strong>
+            </article>
+            <article>
+              <span>Itens diferentes vendidos</span>
+              <strong>{dashboard?.itensMaisVendidos?.length ?? 0}</strong>
+            </article>
+            <article>
+              <span>Status contabilizados</span>
+              <strong>{totalPedidosPorStatus}</strong>
+            </article>
+          </div>
+
+          <div className="dashboard-admin-grid">
+            <article className="dashboard-admin-card">
+              <div className="dashboard-admin-card-title">
+                <h4>Itens mais vendidos</h4>
+                <span>Top 5 do dia</span>
+              </div>
+
+              {(dashboard?.itensMaisVendidos ?? []).length > 0 ? (
+                <div className="top-products-list">
+                  {(dashboard?.itensMaisVendidos ?? []).map((item, index) => (
+                    <div className="top-product-row" key={`${item.produtoId}-${item.nomeProduto}`}>
+                      <div className="ranking-badge">{index + 1}</div>
+                      <div>
+                        <strong>{item.nomeProduto}</strong>
+                        <span>Produto #{item.produtoId}</span>
+                      </div>
+                      <em>{item.quantidadeVendida} vendido{item.quantidadeVendida === 1 ? '' : 's'}</em>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="panel-note">Nenhum item vendido hoje ainda.</div>
+              )}
+            </article>
+
+            <article className="dashboard-admin-card">
+              <div className="dashboard-admin-card-title">
+                <h4>Pedidos por status</h4>
+                <span>Situação atual dos pedidos do dia</span>
+              </div>
+
+              <div className="status-dashboard-list">
+                {dashboardStatusOrder.map((status) => {
+                  const quantity = toNumber(dashboard?.pedidosPorStatus?.[status]);
+                  const total = Math.max(totalPedidosPorStatus, 1);
+                  const percent = Math.min(100, Math.round((quantity / total) * 100));
+
+                  return (
+                    <div className="status-dashboard-row" key={status}>
+                      <div>
+                        <span className={`status-pill status-${status.toLowerCase()}`}>{statusLabels[status]}</span>
+                        <strong>{quantity}</strong>
+                      </div>
+                      <div className="status-progress" aria-label={`${statusLabels[status]}: ${quantity} pedidos`}>
+                        <i style={{ width: `${percent}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </article>
           </div>
         </div>
       )}

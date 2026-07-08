@@ -121,3 +121,17 @@ export type PagamentoResponse = {
   troco?: number | string | null;
   dataPagamento?: string | null;
 };
+
+export type ItemMaisVendidoResponse = {
+  produtoId: number;
+  nomeProduto: string;
+  quantidadeVendida: number;
+};
+
+export type DashboardResponse = {
+  totalVendidoDia: number | string;
+  quantidadePedidosDia: number;
+  itensMaisVendidos: ItemMaisVendidoResponse[];
+  pedidosPorStatus: Partial<Record<StatusPedido, number>>;
+};
+
