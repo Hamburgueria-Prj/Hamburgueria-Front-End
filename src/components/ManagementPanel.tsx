@@ -15,6 +15,7 @@ import { formatCurrency } from '../utils/format';
 import { atualizarProduto, inativarProduto, listarProdutosApi, salvarProdutoSemDuplicar } from '../services/productService';
 import { atualizarUsuario, cadastrarUsuario, inativarUsuario, listarUsuarios } from '../services/userService';
 import { listarPagamentos } from '../services/paymentService';
+import { getErrorMessage } from '../lib/api';
 import { atualizarStatusPedido, listarPedidos } from '../services/orderService';
 import { buscarDashboardDoDia } from '../services/dashboardService';
 
@@ -94,7 +95,7 @@ function parseMoney(value: string): number {
 }
 
 function normalizeMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return getErrorMessage(error, fallback);
 }
 
 function readFileAsBase64(file: File): Promise<string> {

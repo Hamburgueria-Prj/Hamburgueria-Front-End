@@ -1,6 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { LockKeyhole, Mail, ShieldCheck, UserRound, UserPlus } from 'lucide-react';
 import { login, registrar } from '../services/authService';
+import { getErrorMessage } from '../lib/api';
 import { type AuthResponse } from '../types/api';
 
 type LoginPageProps = {
@@ -42,7 +43,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
       onLogin(response);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Não foi possível autenticar.');
+      setError(getErrorMessage(error, 'Não foi possível autenticar.')); 
     } finally {
       setLoading(false);
     }

@@ -8,7 +8,7 @@ import { ManagementPanel } from './components/ManagementPanel';
 import { MenuGrid } from './components/MenuGrid';
 import { SearchAndPromo } from './components/SearchAndPromo';
 import { demoMenuItems, type Category, type MenuItem } from './data/menu';
-import { API_URL } from './lib/api';
+import { API_URL, getErrorMessage } from './lib/api';
 import { garantirProdutosDeAmostra } from './services/productService';
 import { buscarPedidoPorId, finalizarPedido } from './services/orderService';
 import { type CartItem } from './types/cart';
@@ -243,7 +243,7 @@ function App() {
       }
     } catch (error) {
       if (!silent) {
-        setOrderStatusMessage(error instanceof Error ? error.message : 'Não foi possível atualizar o status do pedido.');
+        setOrderStatusMessage(getErrorMessage(error, 'Não foi possível atualizar o status do pedido.'));
       }
     } finally {
       if (!silent) {
@@ -303,7 +303,7 @@ function App() {
       );
     } catch (error) {
       setCheckoutMessageType('error');
-      setCheckoutMessage(error instanceof Error ? error.message : 'Não foi possível finalizar o pedido.');
+      setCheckoutMessage(getErrorMessage(error, 'Não foi possível finalizar o pedido.'));
     } finally {
       setCheckoutLoading(false);
     }

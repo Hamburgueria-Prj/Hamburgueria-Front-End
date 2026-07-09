@@ -1,4 +1,4 @@
-import { request } from '../lib/api';
+import { getErrorMessage, request } from '../lib/api';
 import { type CartItem } from '../types/cart';
 import {
   type FormaPagamento,
@@ -68,7 +68,7 @@ export async function finalizarPedido(items: CartItem[], total: number, options:
   } catch (error) {
     return {
       pedido,
-      pagamentoErro: error instanceof Error ? error.message : 'Pedido criado, mas houve falha ao registrar o pagamento.'
+      pagamentoErro: getErrorMessage(error, 'Pedido criado, mas houve falha ao registrar o pagamento.')
     };
   }
 }
